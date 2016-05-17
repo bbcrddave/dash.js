@@ -77,7 +77,15 @@ function ManifestLoader(config) {
         );
     }
 
-    function load (url) {
+    /**
+     * load and parse a manifest
+     * @param {string|BlobURL} url - NOTE: BlobURL will be revoked once loaded
+     * @param {Object} overrideParameters - a set of key,value pairs which
+     *  replace existing attributes on the loaded manifest. useful when using a
+     *  BlobURL to load an inband-delivered MPD since this will need to retain
+     *  the url and document base uri of the last manifest
+     */
+    function load (url, overrideParameters) {
         const request = new TextRequest(url, HTTPRequest.MPD_TYPE);
 
         xhrLoader.load({
@@ -105,6 +113,10 @@ function ManifestLoader(config) {
                 const manifest = parser.parse(data, xlinkController);
 
                 if (manifest) {
+                    if (urlUtils.isBlobUrl(url)) {
+                        URL.revokeObjectURL(url);
+                    }
+
                     manifest.url = actualUrl || url;
 
                     // URL from which the MPD was originally retrieved (MPD updates will not change this value)
@@ -114,6 +126,15 @@ function ManifestLoader(config) {
 
                     manifest.baseUri = baseUri;
                     manifest.loadedTime = new Date();
+
+                    if (overrideParameters) {
+                        Object.keys(overrideParameters).forEach(key => {
+                            if (manifest.hasOwnProperty(key)) {
+                                manifest[key] = overrideParameters[key];
+                            }
+                        });
+                    }
+
                     xlinkController.resolveManifestOnLoad(manifest);
                 } else {
                     eventBus.trigger(

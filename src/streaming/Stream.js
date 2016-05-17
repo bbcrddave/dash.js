@@ -78,8 +78,8 @@ function Stream(config) {
         fragmentController,
         eventController,
         abrController,
-        textSourceBuffer;
-
+        textSourceBuffer,
+        videoModel;
 
     function setup() {
         streamProcessors = [];
@@ -96,6 +96,7 @@ function Stream(config) {
         mediaController = MediaController(context).getInstance();
         fragmentController = FragmentController(context).create();
         textSourceBuffer = TextSourceBuffer(context).getInstance();
+        videoModel = VideoModel(context).getInstance();
 
         eventBus.on(Events.BUFFERING_COMPLETED, onBufferingCompleted, instance);
         eventBus.on(Events.DATA_UPDATE_COMPLETED, onDataUpdateCompleted, instance);
@@ -141,7 +142,10 @@ function Stream(config) {
         streamProcessors = [];
         isStreamActivated = false;
         isMediaInitialized = false;
-        clearEventController();
+        if (eventController) {
+            eventController.reset();
+            eventController = null;
+        }
         eventBus.off(Events.CURRENT_TRACK_CHANGED, onCurrentTrackChanged, instance);
     }
 
@@ -213,18 +217,6 @@ function Stream(config) {
         return abrController.getBitrateList(mediaInfo);
     }
 
-    function startEventController() {
-        if (eventController) {
-            eventController.start();
-        }
-    }
-
-    function clearEventController() {
-        if (eventController) {
-            eventController.clear();
-        }
-    }
-
     function isActivated() {
         return isStreamActivated;
     }
@@ -264,7 +256,7 @@ function Stream(config) {
 
         if (!!mediaInfo.contentProtection && !capabilities.supportsEncryptedMedia()) {
             errHandler.capabilityError('encryptedmedia');
-        } else if (!capabilities.supportsCodec(VideoModel(context).getInstance().getElement(), codec)) {
+        } else if (!capabilities.supportsCodec(videoModel.getElement(), codec)) {
             msg = type + 'Codec (' + codec + ') is not supported.';
             errHandler.manifestError(msg, 'codec', manifest);
             log(msg);
@@ -401,16 +393,12 @@ function Stream(config) {
 
     function initializeMedia(mediaSource) {
         var manifest = manifestModel.getValue();
-        var events;
+        const eventStreams = adapter.getEventStreamsFor(manifest, streamInfo);
 
-        eventController = EventController(context).getInstance();
-        eventController.initialize();
-        eventController.setConfig({
-            manifestModel: manifestModel,
-            manifestUpdater: manifestUpdater
+        eventController = EventController(context).create({
+            mediaElement: videoModel.getElement()
         });
-        events = adapter.getEventsFor(manifest, streamInfo);
-        eventController.addInlineEvents(events);
+        eventController.initialize(eventStreams);
 
         isUpdating = true;
         initializeMediaForType('video', mediaSource);
@@ -533,24 +521,24 @@ function Stream(config) {
 
         log('Manifest updated... updating data system wide.');
 
-        let manifest = manifestModel.getValue();
+        const manifest = manifestModel.getValue();
+        const previousStreamInfo = streamInfo;
 
         isStreamActivated = false;
         isUpdating = true;
         initialized = false;
         streamInfo = updatedStreamInfo;
 
-        if (eventController) {
-            let events = adapter.getEventsFor(manifest, streamInfo);
-            eventController.addInlineEvents(events);
-        }
+        eventController.handlePeriodSwitch(
+            adapter.getEventStreamsFor(manifest, previousStreamInfo),
+            adapter.getEventStreamsFor(manifest, streamInfo)
+        );
 
-        for (let i = 0, ln = streamProcessors.length; i < ln; i++) {
-            let streamProcessor = streamProcessors[i];
-            let mediaInfo = adapter.getMediaInfoForType(manifest, streamInfo, streamProcessor.getType());
+        streamProcessors.forEach(processor => {
+            const mediaInfo = adapter.getMediaInfoForType(manifest, streamInfo, processor.getType());
             abrController.updateTopQualityIndex(mediaInfo);
-            streamProcessor.updateMediaInfo(manifest, mediaInfo);
-        }
+            processor.updateMediaInfo(manifest, mediaInfo);
+        });
 
         isUpdating = false;
         checkIfInitializationCompleted();
@@ -567,7 +555,6 @@ function Stream(config) {
         getStreamInfo: getStreamInfo,
         hasMedia: hasMedia,
         getBitrateListFor: getBitrateListFor,
-        startEventController: startEventController,
         isActivated: isActivated,
         isInitialized: isInitialized,
         updateData: updateData,

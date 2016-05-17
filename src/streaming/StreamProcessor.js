@@ -200,13 +200,17 @@ function StreamProcessor(config) {
     }
 
     function updateMediaInfo(manifest, newMediaInfo) {
+        const previousMediaInfo = mediaInfo;
+
         if (newMediaInfo !== mediaInfo && (!newMediaInfo || !mediaInfo || (newMediaInfo.type === mediaInfo.type))) {
             mediaInfo = newMediaInfo;
         }
+
         if (mediaInfoArr.indexOf(newMediaInfo) === -1) {
             mediaInfoArr.push(newMediaInfo);
         }
-        adapter.updateData(manifest, this);
+
+        adapter.updateData(manifest, this, newMediaInfo, previousMediaInfo);
     }
 
     function getMediaInfoArr() {
@@ -263,7 +267,6 @@ function StreamProcessor(config) {
         if (type === 'video' || type === 'audio' || type === 'fragmentedText') {
             controller = BufferController(context).create({
                 metricsModel: MetricsModel(context).getInstance(),
-                manifestModel: manifestModel,
                 sourceBufferController: SourceBufferController(context).getInstance(),
                 errHandler: ErrorHandler(context).getInstance(),
                 streamController: StreamController(context).getInstance(),

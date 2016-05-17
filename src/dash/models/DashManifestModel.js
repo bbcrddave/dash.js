@@ -656,91 +656,90 @@ function DashManifestModel() {
         return periodEnd;
     }
 
-    function getEventsForPeriod(manifest, period) {
+    function getEventStreamsFromArray(array, outOfBand) {
+        const eventStreams = [];
 
-        var periodArray = manifest.Period_asArray;
-        var eventStreams = periodArray[period.index].EventStream_asArray;
-        var events = [];
+        if (Array.isArray(array)) {
+            array.forEach(s => {
+                const eventStream = new EventStream();
 
-        if (eventStreams) {
-            for (var i = 0; i < eventStreams.length; i++) {
-                var eventStream = new EventStream();
-                eventStream.period = period;
-                eventStream.timescale = 1;
-
-                if (eventStreams[i].hasOwnProperty('schemeIdUri')) {
-                    eventStream.schemeIdUri = eventStreams[i].schemeIdUri;
+                if (s.hasOwnProperty('schemeIdUri')) {
+                    eventStream.schemeIdUri = s.schemeIdUri;
                 } else {
                     throw new Error('Invalid EventStream. SchemeIdUri has to be set');
                 }
-                if (eventStreams[i].hasOwnProperty('timescale')) {
-                    eventStream.timescale = eventStreams[i].timescale;
+
+                if (s.hasOwnProperty('timescale')) {
+                    eventStream.timescale = s.timescale;
                 }
-                if (eventStreams[i].hasOwnProperty('value')) {
-                    eventStream.value = eventStreams[i].value;
+
+                // this is (incorrectly) interpreted as a number - schema
+                // defines it as a string
+                if (s.hasOwnProperty('value')) {
+                    eventStream.value = s.value.toString();
                 }
-                for (var j = 0; j < eventStreams[i].Event_asArray.length; j++) {
-                    var event = new Event();
-                    event.presentationTime = 0;
-                    event.eventStream = eventStream;
 
-                    if (eventStreams[i].Event_asArray[j].hasOwnProperty('presentationTime')) {
-                        event.presentationTime = eventStreams[i].Event_asArray[j].presentationTime;
-                    }
-                    if (eventStreams[i].Event_asArray[j].hasOwnProperty('duration')) {
-                        event.duration = eventStreams[i].Event_asArray[j].duration;
-                    }
-                    if (eventStreams[i].Event_asArray[j].hasOwnProperty('id')) {
-                        event.id = eventStreams[i].Event_asArray[j].id;
-                    }
-                    events.push(event);
+                if (outOfBand) {
+                    const events = s.Event_asArray || [];
+
+                    events.forEach(e => {
+                        const event = new Event();
+
+                        ['presentationTime', 'duration', 'id'].forEach((p) => {
+                            if (e.hasOwnProperty(p)) {
+                                event[p] = e[p];
+                            }
+                        });
+
+                        // From Cor.1: 'NOTE: this attribute is an alternative
+                        // to specifying a complete XML element(s) in the Event
+                        // It is useful when an event leans itself to a compact
+                        // string representation'
+                        event.messageData = e.messageData || e.__text;
+
+                        eventStream.events.push(event);
+                    });
                 }
-            }
-        }
 
-        return events;
-    }
-
-    function getEventStreams(inbandStreams, representation) {
-        var eventStreams = [];
-
-        if (!inbandStreams) return eventStreams;
-
-        for (var i = 0; i < inbandStreams.length ; i++ ) {
-            var eventStream = new EventStream();
-            eventStream.timescale = 1;
-            eventStream.representation =  representation;
-
-            if (inbandStreams[i].hasOwnProperty('schemeIdUri')) {
-                eventStream.schemeIdUri = inbandStreams[i].schemeIdUri;
-            } else {
-                throw new Error('Invalid EventStream. SchemeIdUri has to be set');
-            }
-            if (inbandStreams[i].hasOwnProperty('timescale')) {
-                eventStream.timescale = inbandStreams[i].timescale;
-            }
-            if (inbandStreams[i].hasOwnProperty('value')) {
-                eventStream.value = inbandStreams[i].value;
-            }
-            eventStreams.push(eventStream);
+                eventStreams.push(eventStream);
+            });
         }
 
         return eventStreams;
     }
 
-    function getEventStreamForAdaptationSet(manifest, adaptation) {
-        if (!adaptation || !manifest) return [];
-        var inbandStreams = manifest.Period_asArray[adaptation.period.index].
-            AdaptationSet_asArray[adaptation.index].InbandEventStream_asArray;
+    function getEventStreamsForPeriod(manifest, period) {
+        if (!manifest || !period) {
+            return [];
+        }
 
-        return getEventStreams(inbandStreams, null);
+        return getEventStreamsFromArray(manifest.
+            Period_asArray[period.index].
+            EventStream_asArray,
+            true);
     }
 
-    function getEventStreamForRepresentation(manifest, representation) {
-        var inbandStreams = manifest.Period_asArray[representation.adaptation.period.index].
-            AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].InbandEventStream_asArray;
+    function getEventStreamsForAdaptationSet(manifest, adaptation) {
+        if (!manifest || !adaptation) {
+            return [];
+        }
 
-        return getEventStreams(inbandStreams, representation);
+        return getEventStreamsFromArray(manifest.
+            Period_asArray[adaptation.period.index].
+            AdaptationSet_asArray[adaptation.index].
+            InbandEventStream_asArray);
+    }
+
+    function getEventStreamsForRepresentation(manifest, representation) {
+        if (!manifest || !representation) {
+            return [];
+        }
+
+        return getEventStreamsFromArray(manifest.
+            Period_asArray[representation.adaptation.period.index].
+            AdaptationSet_asArray[representation.adaptation.index].
+            Representation_asArray[representation.index].
+            InbandEventStream_asArray);
     }
 
     function getUTCTimingSources(manifest) {
@@ -853,6 +852,10 @@ function DashManifestModel() {
         return baseUrls;
     }
 
+    function getPublishTime(manifest) {
+        return manifest.publishTime || 0;
+    }
+
     function getLocation(manifest) {
         if (manifest.hasOwnProperty('Location')) {
             // for now, do not support multiple Locations -
@@ -902,13 +905,14 @@ function DashManifestModel() {
         getAdaptationsForPeriod: getAdaptationsForPeriod,
         getRegularPeriods: getRegularPeriods,
         getMpd: getMpd,
-        getEventsForPeriod: getEventsForPeriod,
-        getEventStreams: getEventStreams,
-        getEventStreamForAdaptationSet: getEventStreamForAdaptationSet,
-        getEventStreamForRepresentation: getEventStreamForRepresentation,
+        getEndTimeForLastPeriod: getEndTimeForLastPeriod,
+        getEventStreamsForPeriod: getEventStreamsForPeriod,
+        getEventStreamsForAdaptationSet: getEventStreamsForAdaptationSet,
+        getEventStreamsForRepresentation: getEventStreamsForRepresentation,
         getUTCTimingSources: getUTCTimingSources,
         getBaseURLsFromElement: getBaseURLsFromElement,
         getRepresentationSortFunction: getRepresentationSortFunction,
+        getPublishTime: getPublishTime,
         getLocation: getLocation
     };
 

@@ -29,16 +29,63 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 /**
- * @class
- * @ignore
+ * @classdesc DashEvent as defined in ISO/IEC 23009-1:2014/Cor.1:2015
  */
-class Event {
-    constructor() {
-        this.duration = Number.MAX_VALUE;
-        this.presentationTime = 0;
-        this.id = undefined;
-        this.messageData = '';
+
+const INBAND_MANIFEST_UPDATE_SCHEMEIDURI    = 'urn:mpeg:dash:event:2012';
+const INBAND_MANIFEST_REMOTE_UPDATE_VALUE   = '1';
+const INBAND_MANIFEST_PATCH_UPDATE_VALUE    = '2';
+const INBAND_MANIFEST_REPLACE_UPDATE_VALUE  = '3';
+
+class DashEvent {
+    constructor(message_data, value) {
+        var offset = 0;
+        var publish_time,
+            mpd;
+
+        if (message_data) {
+            const _readTerminatedString = function (data) {
+                let str = '';
+
+                while (data.byteLength - offset) {
+                    const char = data.getUint8(offset++);
+
+                    if (char === 0) {
+                        break;
+                    }
+
+                    str += String.fromCharCode(char);
+                }
+
+                return str.length ? str : undefined;
+            };
+
+            publish_time = _readTerminatedString(message_data, offset);
+
+            if (value && value.toString() === INBAND_MANIFEST_REPLACE_UPDATE_VALUE) {
+                mpd = _readTerminatedString(message_data, offset);
+            }
+        }
+
+        this.publish_time   = publish_time;
+        this.mpd            = mpd;
+    }
+
+    static get INBAND_MANIFEST_UPDATE_SCHEMEIDURI() {
+        return INBAND_MANIFEST_UPDATE_SCHEMEIDURI;
+    }
+
+    static get INBAND_MANIFEST_REMOTE_UPDATE_VALUE() {
+        return INBAND_MANIFEST_REMOTE_UPDATE_VALUE;
+    }
+
+    static get INBAND_MANIFEST_PATCH_UPDATE_VALUE() {
+        return INBAND_MANIFEST_PATCH_UPDATE_VALUE;
+    }
+
+    static get INBAND_MANIFEST_REPLACE_UPDATE_VALUE() {
+        return INBAND_MANIFEST_REPLACE_UPDATE_VALUE;
     }
 }
 
-export default Event;
+export default DashEvent;

@@ -33,18 +33,23 @@ import Events from '../core/events/Events';
 import FactoryMaker from '../core/FactoryMaker';
 import MediaPlayerModel from './models/MediaPlayerModel';
 import Debug from '../core/Debug';
+import EventMessageEvents from './events/EventMessageEvents';
+import DashEvent from './vo/DashEvent';
+import DateTimeMatcher from '../dash/parser/matchers/DateTimeMatcher';
 
 function ManifestUpdater() {
 
     const context = this.context;
     const log = Debug(context).getInstance().log;
     const eventBus = EventBus(context).getInstance();
+    const dateTimeMatcher = new DateTimeMatcher();
 
     let instance,
         refreshDelay,
         refreshTimer,
         isPaused,
         isUpdating,
+        ignoreManifestInterval,
         manifestLoader,
         manifestModel,
         dashManifestModel,
@@ -61,6 +66,70 @@ function ManifestUpdater() {
         }
     }
 
+    function onInbandUpdateMessage(e) {
+        if (e.schemeIdUri !== DashEvent.INBAND_MANIFEST_UPDATE_SCHEMEIDURI) {
+            return;
+        }
+
+        if (e.duration === 0) {
+            // TODO: this should end the presentation without needing to update
+            // the manifest. for now, reload the manifest which should have
+            // same effect.
+            log('stream has ended!');
+        }
+
+        // stream is not signalled as ended, check publishTime
+        const dashEvent = new DashEvent(e.data, e.value);
+        const publishTime = dashEvent.publish_time;
+
+        // assuming message_data conformed to Cor.1 or later ...
+        if (dateTimeMatcher.test({ value: publishTime })) {
+            const newPublishTime = dateTimeMatcher.converter(publishTime).getTime();
+            const oldPublishTime = dashManifestModel.getPublishTime(manifestModel.getValue());
+
+            if (newPublishTime > oldPublishTime) {
+                updateManifest(dashEvent.mpd);
+            }
+        } else {
+            // otherwise just force a reload
+            updateManifest();
+        }
+    }
+
+    function onEventStreamChanged(e) {
+        if (e.schemeIdUri === DashEvent.INBAND_MANIFEST_UPDATE_SCHEMEIDURI) {
+            let callback;
+
+            switch (e.type) {
+                case EventMessageEvents.INTERNAL_EVENTSTREAM_ADDED:
+                    ignoreManifestInterval = true;
+                    break;
+                case EventMessageEvents.INTERNAL_EVENTSTREAM_REMOVED:
+                    ignoreManifestInterval = false;
+                    break;
+                default:
+                    throw new Error('unexpected event type: ' + e.type);
+            }
+
+            switch (e.value) {
+                case DashEvent.INBAND_MANIFEST_PATCH_UPDATE_VALUE:
+                    log('MPD patching not supported - reloading');
+                    /* falls through */
+                case DashEvent.INBAND_MANIFEST_REPLACE_UPDATE_VALUE:
+                case DashEvent.INBAND_MANIFEST_REMOTE_UPDATE_VALUE:
+                    callback = onInbandUpdateMessage;
+                    break;
+                default:
+                    throw new Error('invalid @value' + e.value);
+            }
+
+            eventBus[ignoreManifestInterval ? 'on' : 'off'](
+                EventMessageEvents.INTERNAL_EVENT_STARTED,
+                callback
+            );
+        }
+    }
+
     function initialize(loader) {
         manifestLoader = loader;
         refreshDelay = NaN;
@@ -68,11 +137,14 @@ function ManifestUpdater() {
         isUpdating = false;
         isPaused = true;
         mediaPlayerModel = MediaPlayerModel(context).getInstance();
+        ignoreManifestInterval = false;
 
         eventBus.on(Events.STREAMS_COMPOSED, onStreamsComposed, this);
         eventBus.on(Events.PLAYBACK_STARTED, onPlaybackStarted, this);
         eventBus.on(Events.PLAYBACK_PAUSED, onPlaybackPaused, this);
         eventBus.on(Events.INTERNAL_MANIFEST_LOADED, onManifestLoaded, this);
+        eventBus.on(EventMessageEvents.INTERNAL_EVENTSTREAM_ADDED, onEventStreamChanged, this);
+        eventBus.on(EventMessageEvents.INTERNAL_EVENTSTREAM_REMOVED, onEventStreamChanged, this);
     }
 
     function setManifest(manifest) {
@@ -84,11 +156,13 @@ function ManifestUpdater() {
     }
 
     function reset() {
-
         eventBus.off(Events.PLAYBACK_STARTED, onPlaybackStarted, this);
         eventBus.off(Events.PLAYBACK_PAUSED, onPlaybackPaused, this);
         eventBus.off(Events.STREAMS_COMPOSED, onStreamsComposed, this);
         eventBus.off(Events.INTERNAL_MANIFEST_LOADED, onManifestLoaded, this);
+        eventBus.off(EventMessageEvents.INTERNAL_EVENTSTREAM_ADDED, onEventStreamChanged, this);
+        eventBus.off(EventMessageEvents.INTERNAL_EVENTSTREAM_REMOVED, onEventStreamChanged, this);
+
         stopManifestRefreshTimer();
         isPaused = true;
         isUpdating = false;
@@ -138,6 +212,31 @@ function ManifestUpdater() {
         }
     }
 
+    function updateManifest(inbandManifestStr) {
+        const manifest = manifestModel.getValue();
+        let url = manifest.url;
+        let overrideParameters;
+
+        if (isPaused || isUpdating) return;
+        isUpdating = true;
+
+        const location = dashManifestModel.getLocation(manifest);
+        if (location) {
+            url = location;
+        }
+
+        if (inbandManifestStr) {
+            overrideParameters = {
+                baseUri:    manifest.baseUri,
+                url:        url
+            };
+
+            url = window.URL.createObjectURL(new Blob([inbandManifestStr], {type: 'application/dash+xml'}));
+        }
+
+        manifestLoader.load(url, overrideParameters);
+    }
+
     function onRefreshTimer() {
         if (isPaused && !mediaPlayerModel.getScheduleWhilePaused() || isUpdating) return;
         refreshManifest();
@@ -160,7 +259,7 @@ function ManifestUpdater() {
     }
 
     function onStreamsComposed(/*e*/) {
-        // When streams are ready we can consider manifest update completed. Resolve the update promise.
+        // When streams are ready we can consider manifest update completed.
         isUpdating = false;
     }
 

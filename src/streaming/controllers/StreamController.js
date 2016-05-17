@@ -345,7 +345,6 @@ function StreamController() {
             }
         }
 
-        activeStream.startEventController();
         if (autoPlay || !initialPlayback) {
             playbackController.play();
         }

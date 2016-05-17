@@ -64,6 +64,14 @@ describe('URLUtils', function () {
 
             expect(result).to.be.true; // jshint ignore:line
         });
+
+        it('should return false for a blob url', () => {
+            const blobUrl = 'blob:test';
+
+            const result = urlUtils.isRelative(blobUrl);
+
+            expect(result).to.be.false; // jshint ignore:line
+        });
     });
 
     describe('isPathAbsolute', () => {
@@ -272,6 +280,24 @@ describe('URLUtils', function () {
             const result = instance.resolve(url, baseUrl);
 
             expect(result).to.equal(expected); // jshint ignore:line
+        });
+    });
+
+    describe('isBlobUrl', () => {
+        it('should return true for a Blob url', () => {
+            const blobUrl = 'blob:test';
+
+            const result = urlUtils.isBlobUrl(blobUrl);
+
+            expect(result).to.be.true; // jshint ignore:line
+        });
+
+        it('should return false for a non-Blob url', () => {
+            const nonBlobUrl = 'notablob:test';
+
+            const result = urlUtils.isBlobUrl(nonBlobUrl);
+
+            expect(result).to.be.false; // jshint ignore:line
         });
     });
 });

@@ -12,6 +12,7 @@ class ObjectsHelper {
             getStreamInfo: () => { return { id: 'some_id' }; },
             getMediaInfo: () => { return { bitrateList: [] }; },
             getIndexHandler: () => this.getDummyIndexHandler(),
+            getEventController: () => this.getDummyEventController(),
             isDynamic: () => true
         };
     }
@@ -42,6 +43,12 @@ class ObjectsHelper {
     getDummyBlacklistController() {
         return {
             contains: () => {}
+        };
+    }
+
+    getDummyEventController() {
+        return {
+            handleRepresentationSwitch: () => {}
         };
     }
 }

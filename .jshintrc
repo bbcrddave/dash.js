@@ -20,7 +20,6 @@
         "kendo",
         "utils",
         "MediaPlayer",
-        "Dash",
         "WebKitMediaSource",
         "MediaSource",
         "WebKitMediaKeys",
@@ -30,5 +29,9 @@
         "TextTrackCue",
         "HTMLMediaElement",
         "MediaError",
-        "cea608parser"]
+        "cea608parser",
+        "TrackEvent",
+        "DataCue",
+        "VTTCue"
+    ]
 }

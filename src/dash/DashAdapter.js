@@ -33,7 +33,7 @@ import TrackInfo from '../streaming/vo/TrackInfo';
 import MediaInfo from '../streaming/vo/MediaInfo';
 import StreamInfo from '../streaming/vo/StreamInfo';
 import ManifestInfo from '../streaming/vo/ManifestInfo';
-import Event from './vo/Event';
+import InbandEvent from './vo/InbandEvent';
 import FactoryMaker from '../core/FactoryMaker';
 import cea608parser from '../../externals/cea608-parser';
 import * as METRIC_LIST from './constants/DashMetricsList';
@@ -318,17 +318,21 @@ function DashAdapter() {
         return streamProcessor.getIndexHandler().setCurrentTime(value);
     }
 
-    function updateData(manifest, streamProcessor) {
-        var periodInfo = getPeriodForStreamInfo(streamProcessor.getStreamInfo());
-        var mediaInfo = streamProcessor.getMediaInfo();
-        var adaptation = getAdaptationForMediaInfo(mediaInfo);
-        var type = streamProcessor.getType();
+    function updateData(manifest, streamProcessor, newMediaInfo, previousMediaInfo) {
+        const periodInfo = getPeriodForStreamInfo(streamProcessor.getStreamInfo());
+        const adaptation = getAdaptationForMediaInfo(newMediaInfo);
+        const type = streamProcessor.getType();
+        const id = newMediaInfo.id;
+        const data = id ?
+            dashManifestModel.getAdaptationForId(id, manifest, periodInfo.index) :
+            dashManifestModel.getAdaptationForIndex(newMediaInfo.index, manifest, periodInfo.index);
 
-        var id,
-            data;
+        streamProcessor.getEventController().handleAdaptationSetSwitch(
+            getEventStreamsFor(manifest, previousMediaInfo, streamProcessor),
+            getEventStreamsFor(manifest, newMediaInfo, streamProcessor)
+        );
 
-        id = mediaInfo.id;
-        data = id ? dashManifestModel.getAdaptationForId(id, manifest, periodInfo.index) : dashManifestModel.getAdaptationForIndex(mediaInfo.index, manifest, periodInfo.index);
+        dashManifestModel.getAdaptationForIndex(newMediaInfo.index, manifest, periodInfo.index);
         streamProcessor.getRepresentationController().updateData(data, adaptation, type);
     }
 
@@ -342,8 +346,8 @@ function DashAdapter() {
         return representation ? convertRepresentationToTrackInfo(manifest, representation) : null;
     }
 
-    function getEvent(eventBox, eventStreams, startTime) {
-        var event = new Event();
+    function getEvent(eventBox, startTime) {
+        var event = new InbandEvent();
         var schemeIdUri = eventBox.scheme_id_uri;
         var value = eventBox.value;
         var timescale = eventBox.timescale;
@@ -353,29 +357,26 @@ function DashAdapter() {
         var messageData = eventBox.message_data;
         var presentationTime = startTime * timescale + presentationTimeDelta;
 
-        if (!eventStreams[schemeIdUri]) return null;
-
-        event.eventStream = eventStreams[schemeIdUri];
-        event.eventStream.value = value;
-        event.eventStream.timescale = timescale;
+        event.schemeIdUri = schemeIdUri;
+        event.value = value;
+        event.timescale = timescale;
         event.duration = duration;
         event.id = id;
         event.presentationTime = presentationTime;
         event.messageData = messageData;
-        event.presentationTimeDelta = presentationTimeDelta;
 
         return event;
     }
 
-    function getEventsFor(manifest, info, streamProcessor) {
+    function getEventStreamsFor(manifest, info, streamProcessor) {
         var events = [];
 
         if (info instanceof StreamInfo) {
-            events = dashManifestModel.getEventsForPeriod(manifest, getPeriodForStreamInfo(info));
+            events = dashManifestModel.getEventStreamsForPeriod(manifest, getPeriodForStreamInfo(info));
         } else if (info instanceof MediaInfo) {
-            events = dashManifestModel.getEventStreamForAdaptationSet(manifest, getAdaptationForMediaInfo(info));
+            events = dashManifestModel.getEventStreamsForAdaptationSet(manifest, getAdaptationForMediaInfo(info));
         } else if (info instanceof TrackInfo) {
-            events = dashManifestModel.getEventStreamForRepresentation(manifest, getRepresentationForTrackInfo(info, streamProcessor.getRepresentationController()));
+            events = dashManifestModel.getEventStreamsForRepresentation(manifest, getRepresentationForTrackInfo(info, streamProcessor.getRepresentationController()));
         }
 
         return events;
@@ -407,7 +408,7 @@ function DashAdapter() {
         generateFragmentRequestForTime: generateFragmentRequestForTime,
         getIndexHandlerTime: getIndexHandlerTime,
         setIndexHandlerTime: setIndexHandlerTime,
-        getEventsFor: getEventsFor,
+        getEventStreamsFor: getEventStreamsFor,
         getEvent: getEvent,
         setConfig: setConfig,
         reset: reset,

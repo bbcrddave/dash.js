@@ -28,17 +28,18 @@
  *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
-/**
- * @class
- * @ignore
- */
-class Event {
+
+import Event from './Event';
+
+class InbandEvent extends Event {
     constructor() {
-        this.duration = Number.MAX_VALUE;
-        this.presentationTime = 0;
-        this.id = undefined;
-        this.messageData = '';
+        super();
+
+        // these are unique to the InbandEvent
+        this.schemeIdUri = '';
+        this.value = '';
+        this.timescale = 0;
     }
 }
 
-export default Event;
+export default InbandEvent;
